@@ -99,12 +99,30 @@ fi
 # ======================= 依赖与权限检查 =======================
 check_dependency() {
   local cmd
-  for cmd in diskutil dscl profiles sw_vers awk grep; do
+  for cmd in diskutil dscl sw_vers awk grep; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       log_error "缺少必要的命令: $cmd. 请检查系统环境。"
       exit 1
     fi
   done
+
+  if ! command -v profiles >/dev/null 2>&1; then
+    log_warn "未找到 profiles 命令，该命令仅用于检查 MDM 注册状态，不影响其他功能。"
+    if [[ $NONINTERACTIVE -eq 0 ]]; then
+      read -p "是否继续执行？(y/n, 任何情况下继续请输入 'a'): " choice
+      case "$choice" in
+        [Yy]|[Aa])
+          log_info "继续执行，但 MDM 状态检查功能将被跳过。"
+          ;;
+        *)
+          log_info "已取消执行。"
+          exit 1
+          ;;
+      esac
+    else
+      log_info "非交互模式下，继续执行。"
+    fi
+  fi
 }
 
 check_root() {
@@ -113,7 +131,6 @@ check_root() {
     exit 1
   fi
 }
-
 # ======================= 检查是否处于恢复模式 =======================
 check_recovery_mode() {
   local product_name
@@ -385,10 +402,14 @@ disable_notification() {
 
 check_mdm_enrollment() {
   log_info "检查 MDM 注册状态..."
-  if profiles show -type enrollment; then
-    log_info "已显示 MDM 注册状态。"
+  if command -v profiles >/dev/null 2>&1; then
+    if profiles show -type enrollment; then
+      log_info "已显示 MDM 注册状态。"
+    else
+      log_error "无法检索 MDM 注册状态。"
+    fi
   else
-    log_error "无法检索 MDM 注册状态。可能在 Recovery 下不可用或未安装 profiles。"
+    log_warn "未找到 profiles 命令，跳过 MDM 注册状态检查。"
   fi
   press_enter_to_continue
 }
