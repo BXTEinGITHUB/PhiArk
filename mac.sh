@@ -155,7 +155,11 @@ check_recovery_mode() {
 select_volume() {
   local prompt="$1"
   local volumes=()
-  local vol
+  # 检查 /Volumes 是否有内容
+  if [ -z "$(ls -A /Volumes 2>/dev/null)" ]; then
+    log_error "未检测到 /Volumes 中的任何卷，请先挂载目标卷。"
+    return 1
+  fi
   for vol in /Volumes/*; do
     if [ -d "$vol" ]; then
       volumes+=("$(basename "$vol")")
@@ -168,7 +172,7 @@ select_volume() {
   echo "$prompt"
   local i=1
   for vol in "${volumes[@]}"; do
-    echo "$i) $vol"
+    printf "%d) %s\n" "$i" "$vol"
     i=$((i+1))
   done
   read -p "请输入选项编号: " choice
@@ -190,11 +194,45 @@ scan_and_select_volumes() {
 get_volumes() {
   local delim="###"
   local auto_boot auto_data boot_vol data_vol
+
+  # 通过 diskutil 获取当前卷信息（在恢复模式下可能返回“macos Base System”）
   auto_boot=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
   auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
   
+  # 如果检测到的是“macos Base System”，说明当前处于恢复模式，采用常用默认值
+  if [[ "$auto_boot" == "macos Base System" ]]; then
+    if [ -d "/Volumes/Macintosh HD" ]; then
+      log_warn "当前为恢复模式，检测到系统卷为 'macos Base System'，改用 'Macintosh HD' 作为系统卷。"
+      auto_boot="Macintosh HD"
+    fi
+  fi
+  
   boot_vol="$auto_boot"
   data_vol="$auto_data"
+  
+  # 后备处理：如果自动检测的卷在 /Volumes 下不存在，则使用常用默认值
+  if [ ! -d "/Volumes/$boot_vol" ]; then
+    if [ -d "/Volumes/Macintosh HD" ]; then
+      log_warn "自动检测的系统卷 /Volumes/$boot_vol 不存在，使用 'Macintosh HD' 作为系统卷。"
+      boot_vol="Macintosh HD"
+    else
+      log_error "找不到系统卷：/Volumes/$boot_vol"
+      return 1
+    fi
+  fi
+  
+  if [ ! -d "/Volumes/$data_vol" ]; then
+    if [ -d "/Volumes/Macintosh HD - Data" ]; then
+      log_warn "自动检测的数据卷 /Volumes/$data_vol 不存在，使用 'Macintosh HD - Data' 作为数据卷。"
+      data_vol="Macintosh HD - Data"
+    elif [ -d "/Volumes/Data" ]; then
+      log_warn "自动检测的数据卷 /Volumes/$data_vol 不存在，使用 'Data' 作为数据卷。"
+      data_vol="Data"
+    else
+      log_error "找不到数据卷：/Volumes/$data_vol"
+      return 1
+    fi
+  fi
   
   printf "${BLU}自动检测到系统卷名称为：${CYAN}%s${NC}\n" "$boot_vol"
   printf "${BLU}自动检测到数据卷名称为：${CYAN}%s${NC}\n" "$data_vol"
