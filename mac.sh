@@ -2,6 +2,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# 设置 PATH 环境变量，确保所有必要命令可用
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 # 版本信息（更新版本号以体现改进）
 readonly SCRIPT_VERSION="1.3.1"
 
@@ -25,6 +28,17 @@ log_warn() {
 
 log_error() {
   printf "${RED}[ERROR]${NC} %s\n" "$1"
+}
+
+# ======================= 清屏函数 =======================
+clear_screen() {
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  elif [ -t 1 ]; then
+    printf "\033c"
+  else
+    for i in {1..50}; do echo; done
+  fi
 }
 
 # ======================= 使用说明 =======================
@@ -102,7 +116,6 @@ check_root() {
 
 # ======================= 检查是否处于恢复模式 =======================
 check_recovery_mode() {
-  # 通过 sw_vers 判断产品名称中是否包含 "Recovery"，否则给出警告
   local product_name
   product_name=$(sw_vers -productName 2>/dev/null || echo "Unknown")
   if [[ "$product_name" != *"Recovery"* ]]; then
@@ -122,7 +135,6 @@ check_recovery_mode() {
 }
 
 # ======================= 卷扫描与选择功能 =======================
-# 列出 /Volumes 下的所有目录，并允许用户选择
 select_volume() {
   local prompt="$1"
   local volumes=()
@@ -150,7 +162,6 @@ select_volume() {
   echo "${volumes[$((choice-1))]}"
 }
 
-# 同时选择系统卷与数据卷（返回格式：系统卷###数据卷）
 scan_and_select_volumes() {
   local boot_vol data_vol delim="###"
   boot_vol=$(select_volume "请选择系统卷:") || { log_error "选择系统卷失败。"; return 1; }
@@ -159,7 +170,6 @@ scan_and_select_volumes() {
 }
 
 # ======================= 获取卷信息 =======================
-# 自动检测卷名，并提供手动输入或卷扫描选择的方式
 get_volumes() {
   local delim="###"
   local boot_vol data_vol
@@ -203,7 +213,6 @@ update_hosts_file() {
   shift
   local domains=("$@")
   if [ -f "$hosts_file" ]; then
-    # 创建备份（仅在第一次更新时创建）
     if [ ! -f "${hosts_file}.bak" ]; then
       cp "$hosts_file" "${hosts_file}.bak" && log_info "已备份 hosts 文件为 ${hosts_file}.bak"
     fi
@@ -230,8 +239,6 @@ press_enter_to_continue() {
 }
 
 # ======================= 核心功能函数 =======================
-
-# 恢复模式绕过：创建用户、更新 hosts、更新配置文件
 autobypass_on_recovery() {
   log_info "开始执行恢复模式绕过操作..."
   local volumes delim boot_volume data_volume
@@ -239,7 +246,6 @@ autobypass_on_recovery() {
   delim="###"
   IFS="$delim" read -r boot_volume data_volume <<< "$volumes"
 
-  # 询问是否将数据卷重命名为 "Data"
   if [ "$data_volume" != "Data" ]; then
     if [[ $NONINTERACTIVE -eq 0 ]]; then
       printf "${YEL}检测到数据卷名称为：%s，需要重命名为 'Data' 吗？(y/n)${NC}\n" "$data_volume"
@@ -260,7 +266,6 @@ autobypass_on_recovery() {
     fi
   fi
 
-  # 尝试确定 dscl 数据库路径
   local dscl_path
   dscl_path="/Volumes/$data_volume/private/var/db/dslocal/nodes/Default"
   if [ ! -d "$dscl_path" ]; then
@@ -274,7 +279,6 @@ autobypass_on_recovery() {
     log_info "使用系统卷的 dscl_path: $dscl_path"
   fi
 
-  # 用户创建（全名与用户名均默认为 "Apple"）
   printf "${BLU}请输入新用户信息（回车使用默认值）：${NC}\n"
   if [[ $NONINTERACTIVE -eq 0 ]]; then
     read -p "$(printf "${YEL}用户全名 (默认: Apple): ${NC}")" realName
@@ -304,7 +308,6 @@ autobypass_on_recovery() {
     fi
     passw="${passw:-1234}"
 
-    # 动态分配 UID 避免冲突
     local uid=501 existing_uids
     existing_uids=$(dscl -f "$dscl_path" . -list /Users UniqueID | awk '{print $2}')
     while echo "$existing_uids" | grep -qw "$uid"; do
@@ -336,11 +339,9 @@ autobypass_on_recovery() {
     fi
   fi
 
-  # 修改 hosts 文件，屏蔽 MDM 域名
   local hosts_file="/Volumes/$boot_volume/etc/hosts"
   update_hosts_file "$hosts_file" "deviceenrollment.apple.com" "mdmenrollment.apple.com" "iprofiles.apple.com"
 
-  # 更新 MDM 配置文件
   local config_dir="/Volumes/$boot_volume/var/db/ConfigurationProfiles/Settings"
   if [ -d "$config_dir" ]; then
     touch "$config_dir/.cloudConfigProfileInstalled" "$config_dir/.cloudConfigRecordNotFound"
@@ -350,7 +351,6 @@ autobypass_on_recovery() {
     log_error "配置目录不存在：$config_dir"
   fi
 
-  # 创建 .AppleSetupDone 文件以跳过初始设置
   local setup_done_file="/Volumes/$data_volume/private/var/db/.AppleSetupDone"
   if touch "$setup_done_file"; then
     log_info "已创建 .AppleSetupDone 文件，将跳过初始设置。"
@@ -363,7 +363,6 @@ autobypass_on_recovery() {
   press_enter_to_continue
 }
 
-# 统一停用通知函数（根据环境自动选择配置路径）
 disable_notification() {
   log_info "执行停用通知操作..."
   local config_dir=""
@@ -416,7 +415,6 @@ block_mdm_service() {
   delim="###"
   IFS="$delim" read -r boot_volume data_volume <<< "$volumes"
 
-  # 备份并禁用 mdmclient
   local mdmclient_path="/Volumes/$boot_volume/usr/libexec/mdmclient"
   if [ -f "$mdmclient_path" ]; then
     if [ ! -f "${mdmclient_path}.bak" ]; then
@@ -431,7 +429,6 @@ block_mdm_service() {
     log_warn "未找到 mdmclient，跳过禁用。"
   fi
 
-  # 备份并禁用 MDM 启动项 plist
   local mdm_daemon="/Volumes/$boot_volume/System/Library/LaunchDaemons/com.apple.mdmclient.plist"
   if [ -f "$mdm_daemon" ]; then
     if [ ! -f "${mdm_daemon}.bak" ]; then
@@ -453,7 +450,6 @@ block_mdm_service() {
   press_enter_to_continue
 }
 
-# ======================= 一次性执行所有操作函数 =======================
 solve_all() {
   log_info "开始一次性执行所有操作..."
   SKIP_WAIT=1
@@ -526,7 +522,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 # ======================= 交互式菜单 =======================
- print_banner() {
+print_banner() {
   clear_screen
   printf "${CYAN}*------------------------------*------------------------------*${NC}\n"
   printf "${RED}   MDM Skipper - BX-E.COM | BXTE STUDIO${NC}\n"
