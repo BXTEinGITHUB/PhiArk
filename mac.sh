@@ -85,7 +85,7 @@ fi
 # ======================= 依赖与权限检查 =======================
 check_dependency() {
   local cmd
-  for cmd in diskutil dscl profiles sw_vers; do
+  for cmd in diskutil dscl profiles sw_vers awk grep; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       log_error "缺少必要的命令: $cmd. 请检查系统环境。"
       exit 1
