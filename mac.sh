@@ -189,9 +189,12 @@ scan_and_select_volumes() {
 # ======================= 获取卷信息 =======================
 get_volumes() {
   local delim="###"
-  local boot_vol data_vol
-  boot_vol=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
-  data_vol=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
+  local auto_boot auto_data boot_vol data_vol
+  auto_boot=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
+  auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
+  
+  boot_vol="$auto_boot"
+  data_vol="$auto_data"
   
   printf "${BLU}自动检测到系统卷名称为：${CYAN}%s${NC}\n" "$boot_vol"
   printf "${BLU}自动检测到数据卷名称为：${CYAN}%s${NC}\n" "$data_vol"
@@ -199,10 +202,10 @@ get_volumes() {
   if [[ $NONINTERACTIVE -eq 0 ]]; then
     read -p "$(printf "${YEL}如信息正确，直接按 Enter；输入 'n' 以手动设置；输入 'm' 以进行卷扫描选择:${NC}")" confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
-      printf "${YEL}请输入系统卷名称 (例如：Macintosh HD): ${NC}"
-      read -r boot_vol
-      printf "${YEL}请输入数据卷名称 (例如：Macintosh HD - Data 或 Data): ${NC}"
-      read -r data_vol
+      read -p "$(printf "${YEL}请输入系统卷名称 (默认为 %s): ${NC}" "$boot_vol")" input
+      boot_vol=${input:-$boot_vol}
+      read -p "$(printf "${YEL}请输入数据卷名称 (默认为 %s): ${NC}" "$data_vol")" input
+      data_vol=${input:-$data_vol}
     elif [[ "$confirm" =~ ^[Mm]$ ]]; then
       local volumes
       volumes=$(scan_and_select_volumes) || { log_error "卷扫描选择失败。"; return 1; }
@@ -223,7 +226,6 @@ get_volumes() {
 
   echo "${boot_vol}${delim}${data_vol}"
 }
-
 # ======================= 更新 hosts 文件规则函数 =======================
 update_hosts_file() {
   local hosts_file=$1
