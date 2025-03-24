@@ -155,18 +155,15 @@ check_recovery_mode() {
 select_volume() {
   local prompt="$1"
   local volumes=()
-  # 检查 /Volumes 是否有内容
-  if [ -z "$(ls -A /Volumes 2>/dev/null)" ]; then
-    log_error "未检测到 /Volumes 中的任何卷，请先挂载目标卷。"
-    return 1
-  fi
   for vol in /Volumes/*; do
-    if [ -d "$vol" ]; then
-      volumes+=("$(basename "$vol")")
+    volname=$(basename "$vol")
+    # 排除特殊卷，避免干扰用户选择
+    if [[ "$volname" != "macOS Base System" && "$volname" != "Recovery" ]]; then
+      volumes+=("$volname")
     fi
   done
   if [ "${#volumes[@]}" -eq 0 ]; then
-    log_error "未检测到任何卷。"
+    log_error "未检测到有效的磁盘卷，请确认磁盘挂载情况。"
     return 1
   fi
   echo "$prompt"
@@ -191,13 +188,41 @@ scan_and_select_volumes() {
 }
 
 # ======================= 获取卷信息 =======================
+mount_apfs_volumes() {
+  log_info "检测 APFS 卷并尝试自动挂载"
+  diskutil list internal | grep 'Apple_APFS Container' | awk '{print $NF}' | while read -r container; do
+    diskutil apfs unlockVolume "$container" -nomount &>/dev/null
+    diskutil apfs list "$container" | grep 'APFS Volume Disk' | awk '{print $NF}' | while read -r volume_disk; do
+      diskutil mount "$volume_disk" &>/dev/null
+    done
+  done
+}
 get_volumes() {
   local delim="###"
   local auto_boot auto_data boot_vol data_vol
 
   # 通过 diskutil 获取当前卷信息（在恢复模式下可能返回“macos Base System”）
   auto_boot=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
-  auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
+
+# 确保在恢复模式下不使用 /System/Volumes/Data
+if [ -d "/System/Volumes/Data" ]; then
+    auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
+else
+    auto_data=""
+fi
+
+# 修复恢复模式下自动检测的卷名问题
+if [[ "$auto_boot" == "macos Base System" || -z "$auto_data" ]]; then
+  if [ -d "/Volumes/Macintosh HD" ]; then
+    log_warn "检测到当前可能为恢复模式，使用默认卷 'Macintosh HD' 和 'Macintosh HD - Data'。"
+    auto_boot="Macintosh HD"
+    auto_data="Macintosh HD - Data"
+  else
+    log_warn "检测到当前可能为恢复模式，但未发现默认卷名，自动检测不可用。"
+    auto_boot=""
+    auto_data=""
+  fi
+fi
   
   # 如果检测到的是“macos Base System”，说明当前处于恢复模式，采用常用默认值
   if [[ "$auto_boot" == "macos Base System" ]]; then
@@ -240,10 +265,23 @@ get_volumes() {
   if [[ $NONINTERACTIVE -eq 0 ]]; then
     read -p "$(printf "${YEL}如信息正确，直接按 Enter；输入 'n' 以手动设置；输入 'm' 以进行卷扫描选择:${NC}")" confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
-      read -p "$(printf "${YEL}请输入系统卷名称 (默认为 %s): ${NC}" "$boot_vol")" input
-      boot_vol=${input:-$boot_vol}
-      read -p "$(printf "${YEL}请输入数据卷名称 (默认为 %s): ${NC}" "$data_vol")" input
-      data_vol=${input:-$data_vol}
+     read -p "$(printf "${YEL}请输入系统卷名称 (默认为 %s): ${NC}" "$boot_vol")" input
+input="${input:-$boot_vol}"
+if [ -d "/Volumes/$input" ]; then
+  boot_vol=$input
+else
+  log_error "找不到指定的系统卷：/Volumes/$input"
+  return 1
+fi
+
+read -p "$(printf "${YEL}请输入数据卷名称 (默认为 %s): ${NC}" "$data_vol")" input
+input="${input:-$data_vol}"
+if [ -d "/Volumes/$input" ]; then
+  data_vol=$input
+else
+  log_error "找不到指定的数据卷：/Volumes/$input"
+  return 1
+fi
     elif [[ "$confirm" =~ ^[Mm]$ ]]; then
       local volumes
       volumes=$(scan_and_select_volumes) || { log_error "卷扫描选择失败。"; return 1; }
@@ -619,6 +657,7 @@ print_banner
 check_dependency
 check_root
 check_recovery_mode
+mount_apfs_volumes
 
 while true; do
   show_menu
