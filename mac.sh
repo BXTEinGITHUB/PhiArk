@@ -527,7 +527,11 @@ fi
 
 # ======================= 交互式菜单 =======================
 print_banner() {
-  clear
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  else
+    printf "\033c"
+  fi
   printf "${CYAN}*------------------------------*------------------------------*${NC}\n"
   printf "${RED}   MDM Skipper - BX-E.COM | BXTE STUDIO${NC}\n"
   printf "${CYAN}*------------------------------*------------------------------*${NC}\n\n"
