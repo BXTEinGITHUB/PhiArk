@@ -526,15 +526,23 @@ if [ "$#" -gt 0 ]; then
 fi
 
 # ======================= 交互式菜单 =======================
-print_banner() {
-  if command -v clear >/dev/null 2>&1; then
-    clear
-  else
-    printf "\033c"
-  fi
+ print_banner() {
+  clear_screen
   printf "${CYAN}*------------------------------*------------------------------*${NC}\n"
   printf "${RED}   MDM Skipper - BX-E.COM | BXTE STUDIO${NC}\n"
   printf "${CYAN}*------------------------------*------------------------------*${NC}\n\n"
+}
+
+clear_screen() {
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  elif [ -t 1 ]; then
+    # 如果是交互式终端，则尝试 ANSI 转义序列
+    printf "\033c"
+  else
+    # 作为最后的手段，打印大量空行
+    for i in {1..50}; do echo; done
+  fi
 }
 
 show_menu() {
