@@ -3,7 +3,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # 版本信息（更新版本号以体现改进）
-readonly SCRIPT_VERSION="1.3"
+readonly SCRIPT_VERSION="1.3.1"
 
 # ======================= 颜色与格式 =======================
 readonly RED='\033[1;31m'     # 红色
@@ -60,6 +60,8 @@ show_manual() {
   3. 检查 MDM：显示当前 MDM 注册状态，便于用户确认是否成功绕过。
   4. 屏蔽 MDM 服务：备份并禁用系统中的 mdmclient 及相关启动项，同时更新 hosts 文件屏蔽 MDM 域名。
   5. 一次性执行所有操作：将上述操作依次执行，适合快速全面处理。
+  6. 卷扫描选择：提供自动扫描 /Volumes 下所有卷，并支持直接选择系统卷和数据卷，
+     解决自动检测不准确或自定义卷名称的情况。
 
 【小彩蛋】PS：传说中凤凰涅槃，正如本脚本助你摆脱束缚般重获新生！祝你好运！
 
@@ -119,28 +121,70 @@ check_recovery_mode() {
   fi
 }
 
+# ======================= 卷扫描与选择功能 =======================
+# 列出 /Volumes 下的所有目录，并允许用户选择
+select_volume() {
+  local prompt="$1"
+  local volumes=()
+  local vol
+  for vol in /Volumes/*; do
+    if [ -d "$vol" ]; then
+      volumes+=("$(basename "$vol")")
+    fi
+  done
+  if [ "${#volumes[@]}" -eq 0 ]; then
+    log_error "未检测到任何卷。"
+    return 1
+  fi
+  echo "$prompt"
+  local i=1
+  for vol in "${volumes[@]}"; do
+    echo "$i) $vol"
+    i=$((i+1))
+  done
+  read -p "请输入选项编号: " choice
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#volumes[@]}" ]; then
+    log_error "无效的选择。"
+    return 1
+  fi
+  echo "${volumes[$((choice-1))]}"
+}
+
+# 同时选择系统卷与数据卷（返回格式：系统卷###数据卷）
+scan_and_select_volumes() {
+  local boot_vol data_vol delim="###"
+  boot_vol=$(select_volume "请选择系统卷:") || { log_error "选择系统卷失败。"; return 1; }
+  data_vol=$(select_volume "请选择数据卷:") || { log_error "选择数据卷失败。"; return 1; }
+  echo "${boot_vol}${delim}${data_vol}"
+}
+
 # ======================= 获取卷信息 =======================
-# 返回格式：系统卷名称###数据卷名称
+# 自动检测卷名，并提供手动输入或卷扫描选择的方式
 get_volumes() {
   local delim="###"
   local boot_vol data_vol
   boot_vol=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
   data_vol=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
-
+  
   printf "${BLU}自动检测到系统卷名称为：${CYAN}%s${NC}\n" "$boot_vol"
   printf "${BLU}自动检测到数据卷名称为：${CYAN}%s${NC}\n" "$data_vol"
+  
   if [[ $NONINTERACTIVE -eq 0 ]]; then
-    read -p "$(printf "${YEL}如信息正确，直接按 Enter；否则输入 'n' 以手动设置:${NC}")" confirm
+    read -p "$(printf "${YEL}如信息正确，直接按 Enter；输入 'n' 以手动设置；输入 'm' 以进行卷扫描选择:${NC}")" confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
       printf "${YEL}请输入系统卷名称 (例如：Macintosh HD): ${NC}"
       read -r boot_vol
       printf "${YEL}请输入数据卷名称 (例如：Macintosh HD - Data 或 Data): ${NC}"
       read -r data_vol
+    elif [[ "$confirm" =~ ^[Mm]$ ]]; then
+      local volumes
+      volumes=$(scan_and_select_volumes) || { log_error "卷扫描选择失败。"; return 1; }
+      IFS="$delim" read -r boot_vol data_vol <<< "$volumes"
     fi
   else
     log_info "非交互模式下，使用自动检测到的卷名。"
   fi
-
+  
   if [ ! -d "/Volumes/$boot_vol" ]; then
     log_error "找不到系统卷：/Volumes/$boot_vol"
     return 1
