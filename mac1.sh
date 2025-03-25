@@ -1,5 +1,5 @@
 #!/bin/bash
-# 设置 PATH，确保在多磁盘或恢复模式下能找到sudo等命令
+# 设置 PATH，确保在多磁盘或恢复模式下能找到命令
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 RED='\033[1;31m'
@@ -30,7 +30,7 @@ datadisk=${datadisk:-"Macintosh HD - Data"}
 
 # 如果数据磁盘存在，则重命名为 Data
 if [ -d "/Volumes/${datadisk}" ]; then
-    sudo diskutil rename "${datadisk}" "Data"
+    diskutil rename "${datadisk}" "Data"
 fi
 
 # 提供功能选项
@@ -62,33 +62,33 @@ select opt in "${options[@]}"; do
         fi
         
         echo -e "${GRN}正在创建用户...${NC}"
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" || { echo -e "${RED}创建用户失败${NC}"; exit 1; }
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "501"
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" || { echo -e "${RED}创建用户失败${NC}"; exit 1; }
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "501"
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
         
-        sudo mkdir -p "/Volumes/Data/Users/$username"
-        sudo dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
-        sudo dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
-        sudo dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership "$username"
+        mkdir -p "/Volumes/Data/Users/$username"
+        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
+        dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
+        dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership "$username"
         
         # 修改 hosts 文件
         if [ -f "/Volumes/${sysdisk}/etc/hosts" ]; then
-            sudo sh -c "echo '0.0.0.0 deviceenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
-            sudo sh -c "echo '0.0.0.0 mdmenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
-            sudo sh -c "echo '0.0.0.0 iprofiles.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
+            sh -c "echo '0.0.0.0 deviceenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
+            sh -c "echo '0.0.0.0 mdmenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
+            sh -c "echo '0.0.0.0 iprofiles.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
             echo -e "${GRN}成功屏蔽主机地址${NC}"
         else
             echo -e "${RED}错误: /Volumes/${sysdisk}/etc/hosts 未找到.${NC}"
         fi
         
         # 创建/删除相关配置文件
-        sudo touch /Volumes/Data/private/var/db/.AppleSetupDone
-        sudo rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        sudo rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        sudo touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        sudo touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+        touch /Volumes/Data/private/var/db/.AppleSetupDone
+        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
         
         echo -e "${CYAN}------ 自动绕过完成 ------${NC}"
         echo -e "${CYAN}------ 请退出终端，重启Mac，并享用新系统！ ------${NC}"
@@ -96,22 +96,22 @@ select opt in "${options[@]}"; do
         ;;
     "重启")
         echo -e "${GRN}正在重启...${NC}"
-        sudo reboot
+        reboot
         break
         ;;
     "禁用通知 (SIP)")
         echo -e "${RED}请输入密码以继续${NC}"
-        sudo rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        sudo rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        sudo touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        sudo touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+        rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+        rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+        touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+        touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
         break
         ;;
     "禁用通知 (恢复)")
-        sudo rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        sudo rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        sudo touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        sudo touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
         break
         ;;
     "检查MDM注册")
@@ -120,7 +120,7 @@ select opt in "${options[@]}"; do
         echo ""
         echo -e "${RED}请输入密码以继续${NC}"
         echo ""
-        sudo profiles show -type enrollment
+        profiles show -type enrollment
         break
         ;;
     *) echo -e "${RED}无效选项 $REPLY${NC}" ;;
