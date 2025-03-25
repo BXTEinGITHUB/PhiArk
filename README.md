@@ -21,6 +21,7 @@ https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/README.md
 在恢复模式终端中粘贴下列命令，即可直接从 GitHub仓库 获取并执行安装脚本：
 
 bash <(curl -fsSL https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/mac.sh)
+
 bash <(curl -fsSL https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/zhihu.sh)
 
 ⚠️ 注意：该方式需要设备已连接网络。如当前网络受限（如限制 GitHub 访问），请先确保联网或考虑离线安装方式。
