@@ -110,12 +110,15 @@ select opt in "${options[@]}"; do
     dscl -f "${dscl_path}" localhost -create "/Local/Default/Users/${username}" RealName "${realName}"
     dscl -f "${dscl_path}" localhost -create "/Local/Default/Users/${username}" UniqueID "${next_id}"
     dscl -f "${dscl_path}" localhost -create "/Local/Default/Users/${username}" PrimaryGroupID "20"
-    dscl -f "${dscl_path}" localhost -create "/Local/Default/Users/${username}" NFSHomeDirectory "/Users/${username}"
+    dscl -f "${dscl_path}" localhost -create "/Local/Default/Users/${username}" NFSHomeDirectory "${user_home}"
     if ! dscl -f "${dscl_path}" localhost -passwd "/Local/Default/Users/${username}" "${passw}"; then
       echo -e "${RED}错误: 为用户 ${username} 设置密码失败${NC}"
       exit 1
     fi
     dscl -f "${dscl_path}" localhost -append "/Local/Default/Groups/admin" GroupMembership "${username}"
+
+    # 设置用户家目录的归属
+    chown -R "${username}:staff" "${user_home}"
 
     #---------- 屏蔽MDM服务器 ----------
     echo -e "${CYAN}=== 修改Hosts文件，屏蔽MDM服务器 ===${NC}"
