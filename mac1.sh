@@ -13,7 +13,7 @@ NC='\033[0m'
 echo -e "${CYAN}*-------------------*---------------------*${NC}"
 echo -e "${YEL}*   MDM检查 - macOS绕过工具            *${NC}"
 echo -e "${RED}*         SKIPMDM.COM                  *${NC}"
-echo -e "${RED}*         Phoenix Team                 *${NC}"
+echo -e "${RED}*         00001                *${NC}"
 echo -e "${CYAN}*-------------------*---------------------*${NC}"
 echo ""
 
@@ -36,7 +36,7 @@ datadisk_path="/Volumes/${datadisk}"  # Dynamic data disk path
 # Rename data disk (using dynamic variable)
 if [ -d "$datadisk_path" ]; then
   echo -e "${GRN}正在重命名数据磁盘...${NC}"
-  diskutil rename "$datadisk" "Data" || {
+  diskutil rename "$datadisk_path" "Data" || {
     echo -e "${RED}重命名失败，请检查磁盘是否被锁定${NC}";
     exit 1;
   }
@@ -104,15 +104,17 @@ select opt in "${options[@]}"; do
     # 获取下一个可用 UniqueID
     next_id=$(dscl -f "$dscl_path" localhost -list "/Local/Default/Users" UniqueID | awk '{print $2}' | sort -n | tail -n 1 | awk '{print $1+1}')
 
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "$next_id"  # 动态ID
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
-    
+    # Create user directory
     mkdir -p "$user_home" || {
       echo -e "${RED}错误: 无法创建用户目录 ${user_home}${NC}";
       exit 1;
     }
+
+    # Set user attributes
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "$next_id"  # 动态ID
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
     dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
     dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
     dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership "$username"
