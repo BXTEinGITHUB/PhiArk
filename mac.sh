@@ -30,6 +30,10 @@ log_error() {
   printf "${RED}[ERROR]${NC} %s\n" "$1"
 }
 
+log_debug() {
+  printf "${CYAN}[DEBUG]${NC} %s\n" "$1"
+}
+
 # ======================= 清屏函数 =======================
 clear_screen() {
   if command -v clear >/dev/null 2>&1; then
@@ -131,11 +135,14 @@ check_root() {
     exit 1
   fi
 }
+
 # ======================= 检查是否处于恢复模式 =======================
 check_recovery_mode() {
   local product_name
   product_name=$(sw_vers -productName 2>/dev/null || echo "Unknown")
-  # 修改处：增加判断 “Base System”
+  log_debug "Product name detected: $product_name"
+  
+  # 检查关键字："Recovery" 或 "Base System"（可根据需要添加其他关键词）
   if [[ "$product_name" == *"Recovery"* || "$product_name" == *"Base System"* ]]; then
     log_info "检测到在 Recovery 模式下运行。"
   else
@@ -191,13 +198,26 @@ scan_and_select_volumes() {
 # ======================= 获取卷信息 =======================
 mount_apfs_volumes() {
   log_info "检测 APFS 卷并尝试自动挂载"
-  diskutil list internal | grep 'Apple_APFS Container' | awk '{print $NF}' | while read -r container; do
+  # 先获取容器列表，并打印调试信息
+  local container_list
+  container_list=$(diskutil list internal | grep 'Apple_APFS Container')
+  log_debug "diskutil list internal 输出的容器信息: $container_list"
+
+  echo "$container_list" | awk '{print $NF}' | while read -r container; do
+    log_debug "Processing container: $container"
     diskutil apfs unlockVolume "$container" -nomount &>/dev/null || true
-    diskutil apfs list "$container" 2>/dev/null | grep 'APFS Volume Disk' | awk '{print $NF}' | while read -r volume_disk; do
+    # 获取该容器下的卷信息
+    local volume_list
+    volume_list=$(diskutil apfs list "$container" 2>/dev/null | grep 'APFS Volume Disk')
+    log_debug "容器 $container 中的 APFS 卷: $volume_list"
+    
+    echo "$volume_list" | awk '{print $NF}' | while read -r volume_disk; do
+      log_debug "Processing volume disk: $volume_disk"
       diskutil mount "$volume_disk" &>/dev/null || true
     done
   done
 }
+
 get_volumes() {
   local delim="###"
   local auto_boot auto_data boot_vol data_vol
@@ -303,6 +323,7 @@ get_volumes() {
 
   echo "${boot_vol}${delim}${data_vol}"
 }
+
 # ======================= 更新 hosts 文件规则函数 =======================
 update_hosts_file() {
   local hosts_file=$1
@@ -479,7 +500,7 @@ disable_notification() {
   press_enter_to_continue
 }
 
-# 修改处：更新 profiles 检测逻辑
+# 更新 profiles 检测逻辑
 check_mdm_enrollment() {
   log_info "检查 MDM 注册状态..."
   if command -v profiles >/dev/null 2>&1; then
@@ -634,10 +655,8 @@ clear_screen() {
   if command -v clear >/dev/null 2>&1; then
     clear
   elif [ -t 1 ]; then
-    # 如果是交互式终端，则尝试 ANSI 转义序列
     printf "\033c"
   else
-    # 作为最后的手段，打印大量空行
     for i in {1..50}; do echo; done
   fi
 }
