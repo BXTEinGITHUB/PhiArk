@@ -14,7 +14,7 @@ https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/README.md
 
 在恢复模式终端中粘贴下列命令，即可直接从 GitHub仓库 获取并执行安装脚本：
 
-bash <(curl -fsSL https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/end.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/ 你需要的版本 )
 
 bash <(curl -fsSL https://raw.githubusercontent.com/BXTEinGITHUB/PhiArk/main/zhihu.sh)
 
