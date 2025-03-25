@@ -1,6 +1,6 @@
 #!/bin/bash
-# 设置 PATH，确保在多磁盘或恢复模式下能找到命令
-export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+# 设置 PATH 确保在恢复模式下找到命令（添加系统卷路径）
+export PATH="/Volumes/Macintosh HD/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 RED='\033[1;31m'
 GRN='\033[1;32m'
@@ -11,118 +11,149 @@ CYAN='\033[1;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}*-------------------*---------------------*${NC}"
-echo -e "${YEL}*   检查MDM - MacOS绕过工具            *${NC}"
+echo -e "${YEL}*   MDM检查 - macOS绕过工具            *${NC}"
 echo -e "${RED}*         SKIPMDM.COM                  *${NC}"
 echo -e "${RED}*         Phoenix Team                 *${NC}"
 echo -e "${CYAN}*-------------------*---------------------*${NC}"
 echo ""
 
-# 选择磁盘功能
+#-------------------
+# 磁盘处理函数
+#-------------------
 echo -e "${GRN}请选择磁盘：${NC}"
 echo -e "${YEL}当前可用磁盘列表：${NC}"
 ls /Volumes
 echo ""
+
 read -p "请输入系统磁盘名称 (默认: Macintosh HD): " sysdisk
 sysdisk=${sysdisk:-"Macintosh HD"}
 
 read -p "请输入数据磁盘名称 (默认: Macintosh HD - Data): " datadisk
 datadisk=${datadisk:-"Macintosh HD - Data"}
 
-# 如果数据磁盘存在，则重命名为 Data
+# 重命名数据磁盘（无需sudo，恢复模式已是root）
 if [ -d "/Volumes/${datadisk}" ]; then
-    diskutil rename "${datadisk}" "Data"
+  echo -e "${GRN}正在重命名数据磁盘...${NC}"
+  diskutil rename "${datadisk}" "Data" || {
+    echo -e "${RED}重命名失败，请检查磁盘是否被锁定${NC}";
+    exit 1;
+  }
 fi
 
-# 提供功能选项
-PS3='请选择一个选项: '
-options=("恢复模式自动绕过" "重启" "禁用通知 (SIP)" "禁用通知 (恢复)" "检查MDM注册")
+#-------------------
+# 主菜单
+#-------------------
+PS3='请选择操作: '
+options=("恢复模式自动绕过" "重启" "禁用通知 (SIP)" "禁用通知 (恢复模式)" "检查MDM注册" "退出")
 select opt in "${options[@]}"; do
-    case $opt in
-    "恢复模式自动绕过")
-        echo -e "${GRN}正在恢复模式下自动绕过MDM...${NC}"
-        
-        echo -e "${GRN}创建新用户${NC}"
-        echo -e "${BLU}按回车继续，注意：留空将使用默认用户${NC}"
-        
-        # 读取用户信息
-        read -p "请输入全名 (默认: Apple): " realName
-        realName=${realName:-"Apple"}
-        
-        read -p "请输入用户名（不含空格） (默认: Apple): " username
-        username=${username:-"Apple"}
-        
-        read -p "请输入密码 (默认: 1234): " passw
-        passw=${passw:-"1234"}
-        
-        # 定义 dscl 路径并检查是否存在
-        dscl_path='/Volumes/Data/private/var/db/dslocal/nodes/Default'
-        if [ ! -d "$dscl_path" ]; then
-            echo -e "${RED}错误: 目录 $dscl_path 不存在. 退出.${NC}"
-            exit 1
-        fi
-        
-        echo -e "${GRN}正在创建用户...${NC}"
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" || { echo -e "${RED}创建用户失败${NC}"; exit 1; }
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "501"
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
-        
-        mkdir -p "/Volumes/Data/Users/$username"
-        dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
-        dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
-        dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership "$username"
-        
-        # 修改 hosts 文件
-        if [ -f "/Volumes/${sysdisk}/etc/hosts" ]; then
-            sh -c "echo '0.0.0.0 deviceenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
-            sh -c "echo '0.0.0.0 mdmenrollment.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
-            sh -c "echo '0.0.0.0 iprofiles.apple.com' >> /Volumes/${sysdisk}/etc/hosts"
-            echo -e "${GRN}成功屏蔽主机地址${NC}"
-        else
-            echo -e "${RED}错误: /Volumes/${sysdisk}/etc/hosts 未找到.${NC}"
-        fi
-        
-        # 创建/删除相关配置文件
-        touch /Volumes/Data/private/var/db/.AppleSetupDone
-        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
-        
-        echo -e "${CYAN}------ 自动绕过完成 ------${NC}"
-        echo -e "${CYAN}------ 请退出终端，重启Mac，并享用新系统！ ------${NC}"
-        break
-        ;;
-    "重启")
-        echo -e "${GRN}正在重启...${NC}"
-        reboot
-        break
-        ;;
-    "禁用通知 (SIP)")
-        echo -e "${RED}请输入密码以继续${NC}"
-        rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
-        break
-        ;;
-    "禁用通知 (恢复)")
-        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
-        rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
-        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
-        touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
-        break
-        ;;
-    "检查MDM注册")
-        echo ""
-        echo -e "${GRN}检查MDM注册（出现错误即为成功）${NC}"
-        echo ""
-        echo -e "${RED}请输入密码以继续${NC}"
-        echo ""
-        profiles show -type enrollment
-        break
-        ;;
-    *) echo -e "${RED}无效选项 $REPLY${NC}" ;;
-    esac
+  case $opt in
+  "恢复模式自动绕过")
+    echo -e "${GRN}[正在执行恢复模式绕过...]${NC}"
+
+    # 检查数据磁盘挂载
+    if [ ! -d "/Volumes/Data" ]; then
+      echo -e "${RED}错误: 数据磁盘未挂载，请检查名称是否正确${NC}"
+      exit 1
+    fi
+
+    #---------- 用户创建 ----------
+    echo -e "${CYAN}=== 用户创建步骤 ===${NC}"
+    echo -e "${BLU}提示：直接回车将使用默认值${NC}"
+    
+    read -p "请输入全名 (默认: Apple): " realName
+    realName=${realName:-"Apple"}
+    
+    read -p "请输入用户名（无空格）(默认: Apple): " username
+    username=${username:-"Apple"}
+    
+    read -sp "请输入密码 (默认: 1234): " passw
+    passw=${passw:-"1234"}
+    echo ""
+
+    #---------- 关键路径检查 ----------
+    dscl_path='/Volumes/Data/private/var/db/dslocal/nodes/Default'
+    if [ ! -d "$dscl_path" ]; then
+      echo -e "${RED}错误: 目录 $dscl_path 不存在，请检查数据磁盘${NC}"
+      exit 1
+    fi
+
+    #---------- 创建用户 ----------
+    echo -e "${GRN}正在创建用户...${NC}"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" || exit 1
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "501"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
+    
+    mkdir -p "/Volumes/Data/Users/$username" || {
+      echo -e "${RED}无法创建用户目录${NC}";
+      exit 1;
+    }
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
+    dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
+    dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership "$username"
+
+    #---------- 屏蔽MDM服务器 ----------
+    echo -e "${CYAN}=== 正在修改Hosts文件 ===${NC}"
+    hosts_path="/Volumes/${sysdisk}/etc/hosts"
+    if [ -f "$hosts_path" ]; then
+      {
+        echo '0.0.0.0 deviceenrollment.apple.com'
+        echo '0.0.0.0 mdmenrollment.apple.com'
+        echo '0.0.0.0 iprofiles.apple.com'
+      } >> "$hosts_path"
+      echo -e "${GRN}成功屏蔽MDM服务器${NC}"
+    else
+      echo -e "${RED}警告: 未找到hosts文件，跳过此步骤${NC}"
+    fi
+
+    #---------- 关键文件操作 ----------
+    echo -e "${CYAN}=== 正在修改系统配置 ===${NC}"
+    touch "/Volumes/Data/private/var/db/.AppleSetupDone"
+    rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+    rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+    touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+    touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+
+    echo -e "${CYAN}====== 自动绕过完成 ======${NC}"
+    echo -e "${YEL}请退出终端并重启Mac${NC}"
+    break
+    ;;
+
+  "重启")
+    echo -e "${GRN}正在重启系统...${NC}"
+    reboot
+    ;;
+
+  "禁用通知 (SIP)")
+    echo -e "${YEL}正在禁用系统完整性保护...${NC}"
+    rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+    rm "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+    touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+    touch "/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+    ;;
+
+  "禁用通知 (恢复模式)")
+    echo -e "${YEL}正在恢复模式禁用配置...${NC}"
+    rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigHasActivationRecord"
+    rm -rf "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordFound"
+    touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigProfileInstalled"
+    touch "/Volumes/${sysdisk}/var/db/ConfigurationProfiles/Settings/.cloudConfigRecordNotFound"
+    ;;
+
+  "检查MDM注册")
+    echo -e "${CYAN}=== MDM注册状态检查 ===${NC}"
+    echo -e "${YEL}如果显示'Error: No Enrollment'表示成功${NC}"
+    profiles show -type enrollment
+    ;;
+
+  "退出")
+    echo -e "${GRN}正在退出...${NC}"
+    exit 0
+    ;;
+
+  *)
+    echo -e "${RED}无效选项: $REPLY${NC}"
+    ;;
+  esac
 done
