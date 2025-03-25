@@ -6,7 +6,7 @@ IFS=$'\n\t'
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # 版本信息（更新版本号以体现改进）
-readonly SCRIPT_VERSION="1.3.2"
+readonly SCRIPT_VERSION="1.3.1"
 
 # ======================= 颜色与格式 =======================
 readonly RED='\033[1;31m'     # 红色
@@ -131,18 +131,15 @@ check_root() {
     exit 1
   fi
 }
-
 # ======================= 检查是否处于恢复模式 =======================
 check_recovery_mode() {
-  # 原脚本严格依赖 sw_vers -productName 中是否包含 "Recovery"，
-  # 在部分系统可能仅返回 "Unknown"。这里改为仅在匹配时提示，否则仅发出警告。
   local product_name
   product_name=$(sw_vers -productName 2>/dev/null || echo "Unknown")
-
-  if [[ "$product_name" == *"Recovery"* ]]; then
+  # 修改处：增加判断 “Base System”
+  if [[ "$product_name" == *"Recovery"* || "$product_name" == *"Base System"* ]]; then
     log_info "检测到在 Recovery 模式下运行。"
   else
-    log_warn "无法确认当前是否处于 Recovery 模式。部分操作若在非恢复模式下可能失败。"
+    log_warn "当前系统可能不在 Recovery 模式下运行。部分操作可能失败。"
     if [[ $NONINTERACTIVE -eq 0 ]]; then
       read -p "是否继续执行？(y/n): " cont
       if [[ ! "$cont" =~ ^[Yy]$ ]]; then
@@ -193,61 +190,52 @@ scan_and_select_volumes() {
 
 # ======================= 获取卷信息 =======================
 mount_apfs_volumes() {
-  log_info "检测 APFS 卷并尝试自动挂载..."
-
-  # 修复：若未检测到任何 APFS 容器，不执行后续循环，避免空管道导致的脚本闪退
-  local containers
-  containers=$(diskutil list internal 2>/dev/null | grep 'Apple_APFS Container' | awk '{print $NF}')
-  if [[ -z "$containers" ]]; then
-    log_warn "未检测到 Apple_APFS Container，跳过自动挂载 APFS 卷操作。"
-    return
-  fi
-
-  # 否则循环尝试解锁并挂载
-  echo "$containers" | while read -r container; do
+  log_info "检测 APFS 卷并尝试自动挂载"
+  diskutil list internal | grep 'Apple_APFS Container' | awk '{print $NF}' | while read -r container; do
     diskutil apfs unlockVolume "$container" -nomount &>/dev/null || true
-    diskutil apfs list "$container" | grep 'APFS Volume Disk' | awk '{print $NF}' | while read -r volume_disk; do
+    diskutil apfs list "$container" 2>/dev/null | grep 'APFS Volume Disk' | awk '{print $NF}' | while read -r volume_disk; do
       diskutil mount "$volume_disk" &>/dev/null || true
     done
   done
 }
-
 get_volumes() {
   local delim="###"
   local auto_boot auto_data boot_vol data_vol
 
-  auto_boot=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs || true)
+  # 通过 diskutil 获取当前卷信息（在恢复模式下可能返回“macos Base System”）
+  auto_boot=$(diskutil info / | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
 
   # 确保在恢复模式下不使用 /System/Volumes/Data
   if [ -d "/System/Volumes/Data" ]; then
-      auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs || true)
+    auto_data=$(diskutil info /System/Volumes/Data | awk -F': ' '/Volume Name/ {print $2}' | head -n1 | xargs)
   else
-      auto_data=""
+    auto_data=""
   fi
 
-  # 如果检测到是macOS Base System，或者 auto_data 为空，则尝试常用默认值
+  # 修复恢复模式下自动检测的卷名问题
   if [[ "$auto_boot" == "macos Base System" || -z "$auto_data" ]]; then
     if [ -d "/Volumes/Macintosh HD" ]; then
       log_warn "检测到当前可能为恢复模式，使用默认卷 'Macintosh HD' 和 'Macintosh HD - Data'。"
       auto_boot="Macintosh HD"
       auto_data="Macintosh HD - Data"
     else
-      log_warn "可能处于恢复模式，但未发现默认卷名，自动检测不可用。"
+      log_warn "检测到当前可能为恢复模式，但未发现默认卷名，自动检测不可用。"
       auto_boot=""
       auto_data=""
     fi
   fi
-
+  
+  # 如果检测到的是“macos Base System”，说明当前处于恢复模式，采用常用默认值
   if [[ "$auto_boot" == "macos Base System" ]]; then
     if [ -d "/Volumes/Macintosh HD" ]; then
       log_warn "当前为恢复模式，检测到系统卷为 'macos Base System'，改用 'Macintosh HD' 作为系统卷。"
       auto_boot="Macintosh HD"
     fi
   fi
-
+  
   boot_vol="$auto_boot"
   data_vol="$auto_data"
-
+  
   # 后备处理：如果自动检测的卷在 /Volumes 下不存在，则使用常用默认值
   if [ ! -d "/Volumes/$boot_vol" ]; then
     if [ -d "/Volumes/Macintosh HD" ]; then
@@ -258,7 +246,7 @@ get_volumes() {
       return 1
     fi
   fi
-
+  
   if [ ! -d "/Volumes/$data_vol" ]; then
     if [ -d "/Volumes/Macintosh HD - Data" ]; then
       log_warn "自动检测的数据卷 /Volumes/$data_vol 不存在，使用 'Macintosh HD - Data' 作为数据卷。"
@@ -271,10 +259,10 @@ get_volumes() {
       return 1
     fi
   fi
-
+  
   printf "${BLU}自动检测到系统卷名称为：${CYAN}%s${NC}\n" "$boot_vol"
   printf "${BLU}自动检测到数据卷名称为：${CYAN}%s${NC}\n" "$data_vol"
-
+  
   if [[ $NONINTERACTIVE -eq 0 ]]; then
     read -p "$(printf "${YEL}如信息正确，直接按 Enter；输入 'n' 以手动设置；输入 'm' 以进行卷扫描选择:${NC}")" confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
@@ -303,7 +291,7 @@ get_volumes() {
   else
     log_info "非交互模式下，使用自动检测到的卷名。"
   fi
-
+  
   if [ ! -d "/Volumes/$boot_vol" ]; then
     log_error "找不到系统卷：/Volumes/$boot_vol"
     return 1
@@ -315,7 +303,6 @@ get_volumes() {
 
   echo "${boot_vol}${delim}${data_vol}"
 }
-
 # ======================= 更新 hosts 文件规则函数 =======================
 update_hosts_file() {
   local hosts_file=$1
@@ -492,21 +479,14 @@ disable_notification() {
   press_enter_to_continue
 }
 
+# 修改处：更新 profiles 检测逻辑
 check_mdm_enrollment() {
   log_info "检查 MDM 注册状态..."
   if command -v profiles >/dev/null 2>&1; then
-    # 先尝试旧用法
-    if profiles show -type enrollment &>/dev/null; then
-      profiles show -type enrollment
-      log_info "已使用 'profiles show -type enrollment' 显示 MDM 注册状态。"
+    if profiles -L 2>/dev/null | grep -qi "enrollment"; then
+      log_info "检测到 MDM 注册信息。"
     else
-      # 若失败，则尝试新的 status 用法
-      if profiles status -type enrollment &>/dev/null; then
-        profiles status -type enrollment
-        log_info "已使用 'profiles status -type enrollment' 显示 MDM 注册状态。"
-      else
-        log_error "无法通过 profiles 命令检索 MDM 注册状态，可能不支持该子命令。"
-      fi
+      log_info "未检测到 MDM 注册信息。"
     fi
   else
     log_warn "未找到 profiles 命令，跳过 MDM 注册状态检查。"
@@ -654,8 +634,10 @@ clear_screen() {
   if command -v clear >/dev/null 2>&1; then
     clear
   elif [ -t 1 ]; then
+    # 如果是交互式终端，则尝试 ANSI 转义序列
     printf "\033c"
   else
+    # 作为最后的手段，打印大量空行
     for i in {1..50}; do echo; done
   fi
 }
