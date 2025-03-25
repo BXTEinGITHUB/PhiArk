@@ -56,6 +56,12 @@ select opt in "${options[@]}"; do
       exit 1
     fi
 
+    # 检查数据磁盘挂载状态
+    if [ ! -d "/Volumes/Data/private/var/db/dslocal/nodes/Default" ]; then
+      echo -e "${RED}错误: 数据磁盘未正确挂载到 /Volumes/Data${NC}"
+      exit 1
+    fi
+
     #---------- 用户创建 ----------
     echo -e "${CYAN}=== 用户创建步骤 ===${NC}"
     echo -e "${BLU}提示：直接回车将使用默认值${NC}"
@@ -65,6 +71,10 @@ select opt in "${options[@]}"; do
     
     read -p "请输入用户名（无空格）(默认: Apple): " username
     username=${username:-"Apple"}
+    if [[ "$username" =~ [^a-zA-Z0-9] ]]; then
+      echo -e "${RED}错误: 用户名只能包含字母和数字${NC}"
+      exit 1
+    fi
     
     read -sp "请输入密码 (默认: 1234): " passw
     passw=${passw:-"1234"}
@@ -79,10 +89,17 @@ select opt in "${options[@]}"; do
 
     #---------- 创建用户 ----------
     echo -e "${GRN}正在创建用户...${NC}"
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" || exit 1
+
+    # 清理旧用户
+    dscl -f "$dscl_path" localhost -delete "/Local/Default/Users/$username" >/dev/null 2>&1
+    rm -rf "/Volumes/Data/Users/$username" >/dev/null 2>&1
+
+    # 获取下一个可用 UniqueID
+    next_id=$(dscl -f "$dscl_path" localhost -list "/Local/Default/Users" UniqueID | awk '{print $2}' | sort -n | tail -n 1 | awk '{print $1+1}')
+
     dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
     dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
-    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "501"
+    dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "$next_id"  # 动态ID
     dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
     
     mkdir -p "/Volumes/Data/Users/$username" || {
@@ -117,6 +134,7 @@ select opt in "${options[@]}"; do
 
     echo -e "${CYAN}====== 自动绕过完成 ======${NC}"
     echo -e "${YEL}请退出终端并重启Mac${NC}"
+    trap 'rm -rf "/Volumes/Data/Users/$username"; dscl -f "$dscl_path" localhost -delete "/Local/Default/Users/$username"' EXIT
     break
     ;;
 
@@ -157,3 +175,5 @@ select opt in "${options[@]}"; do
     ;;
   esac
 done
+
+exec > >(tee -a "/Volumes/Data/mdm_bypass.log") 2>&1
